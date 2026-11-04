@@ -17,7 +17,3 @@ re-tick Talk in System Settings → Privacy & Security → Accessibility.
     { "hotkey": "opt+space", "pill": "bottom", "unloadAfterSeconds": 0 }
 
 `hotkey`: e.g. `ctrl+opt+d`, `f13`, `cmd+shift+space`. `pill`: `bottom` or `top`. `unloadAfterSeconds`: keep the model warm for N s after a dictation.
-
-## Self-test
-    .build/release/Talk --render-pill            # writes /tmp/pill-*.png for every pill state
-    .build/release/Talk --transcribe some.wav    # prints text, load/transcribe ms, memory

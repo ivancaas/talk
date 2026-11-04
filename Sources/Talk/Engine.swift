@@ -21,6 +21,8 @@ final class Engine {
         guard loading == nil else { return }
         loading = Task {
             let t0 = Date()
+            // int8V2 on the Neural Engine: measured best of the FluidAudio options (palettized .int8 doubles
+            // noisy-Spanish errors; CPU fp32 is ~2 points better there but much slower).
             let models = try await AsrModels.downloadAndLoad(
                 to: Self.modelsDir, version: .v3, encoderPrecision: .int8V2)
             let manager = AsrManager(config: .default)
@@ -47,8 +49,9 @@ final class Engine {
         }
         var state = TdtDecoderState.make()
         let t0 = Date()
-        let result = try await manager.transcribe(samples, decoderState: &state)
-        log("transcribed \(String(format: "%.1f", Double(samples.count) / 16000)) s audio in \(ms(since: t0)) ms")
+        let (leveled, gainDB) = Level.normalize(samples)
+        let result = try await manager.transcribe(leveled, decoderState: &state)
+        log("transcribed \(String(format: "%.1f", Double(samples.count) / 16000)) s audio in \(ms(since: t0)) ms, gain \(String(format: "%+.1f", gainDB)) dB")
         return result.text.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 

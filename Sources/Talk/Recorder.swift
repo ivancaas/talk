@@ -33,6 +33,17 @@ final class Recorder {
             engine.stop()
         }
         engine = nil
+        // The resampler holds back up to ~50 ms; drain it so the last syllable isn't cut.
+        if let converter, let tail = AVAudioPCMBuffer(pcmFormat: Self.target, frameCapacity: 4096) {
+            var error: NSError?
+            converter.convert(to: tail, error: &error) { _, status in
+                status.pointee = .endOfStream
+                return nil
+            }
+            if error == nil, let ch = tail.floatChannelData, tail.frameLength > 0 {
+                lock.lock(); samples.append(contentsOf: UnsafeBufferPointer(start: ch[0], count: Int(tail.frameLength))); lock.unlock()
+            }
+        }
         converter = nil
         lock.lock(); defer { lock.unlock() }
         let out = samples
