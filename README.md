@@ -20,7 +20,10 @@ Menu-bar dictation for macOS. Press **⌥Space**, speak, press **⌥Space** agai
 Talk appears in the menu bar (no Dock icon). On first launch it downloads the model in the background
 (a few minutes, depending on your connection); the first dictation waits for it to finish.
 First run asks for Microphone and Accessibility (needed to paste): grant both (if pasting still doesn't work, quit and reopen Talk).
-Ad-hoc signed: after a rebuild, re-tick Talk in System Settings → Privacy & Security → Accessibility.
+
+Signing: the first build creates a self-signed "Talk Local Signing" certificate in your login keychain
+(macOS may ask once to let codesign use it: choose Always Allow). Every build is signed with it, so the
+Accessibility permission survives rebuilds; no Apple developer account needed.
 
 ## Config (`~/.config/talk/config.json`, restart Talk after editing)
     { "hotkey": "opt+space", "pill": "bottom", "unloadAfterSeconds": 0 }
