@@ -44,6 +44,12 @@ pkill -x Talk 2>/dev/null || true
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
 cp .build/release/Talk "$APP/Contents/MacOS/Talk"
+# App icon: drawn by the app itself (Sources/Talk/Icon.swift), packed with iconutil.
+ICON_TMP=$(mktemp -d)
+.build/release/Talk --render-icons "$ICON_TMP"
+mkdir -p "$APP/Contents/Resources"
+iconutil -c icns "$ICON_TMP/AppIcon.iconset" -o "$APP/Contents/Resources/AppIcon.icns"
+rm -rf "$ICON_TMP"
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -52,6 +58,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>CFBundleIdentifier</key><string>com.ivancarracedo.talk</string>
     <key>CFBundleName</key><string>Talk</string>
     <key>CFBundleExecutable</key><string>Talk</string>
+    <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>1.0</string>
     <key>CFBundleVersion</key><string>1</string>

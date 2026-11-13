@@ -119,15 +119,11 @@ final class App: NSObject, NSApplicationDelegate {
     @objc func openConfig() { NSWorkspace.shared.open(Config.url) }
 
     func refreshIcon() {
-        let (name, tint): (String, NSColor?) = switch state {
-        case .idle: ("mic", nil)
-        case .recording: ("mic.fill", .systemRed)
-        case .transcribing: ("waveform", nil)
+        item?.button?.image = switch state {
+        case .idle: Icon.menuBar(.wave)
+        case .recording: Icon.menuBar(.wave, tint: .systemRed)
+        case .transcribing: Icon.menuBar(.dots)
         }
-        let img = NSImage(systemSymbolName: name, accessibilityDescription: "Talk")
-        img?.isTemplate = tint == nil
-        item?.button?.image = img
-        item?.button?.contentTintColor = tint
     }
 
     func toggle() {
@@ -230,6 +226,8 @@ if let i = args.firstIndex(of: "--transcribe"), i + 1 < args.count {
         }
     }
     RunLoop.main.run()
+} else if let i = args.firstIndex(of: "--render-icons"), i + 1 < args.count {
+    do { try Icon.render(to: URL(fileURLWithPath: args[i + 1])) } catch { log("icons: \(error)"); exit(1) }
 } else if args.contains("--render-pill") {
     MainActor.assumeIsolated { HUD.renderPreviews(to: URL(fileURLWithPath: "/tmp")) }
 } else if args.contains("--demo-pill") {
