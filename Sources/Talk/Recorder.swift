@@ -16,10 +16,14 @@ final class Recorder {
         let input = engine.inputNode
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0 else { throw NSError(domain: "talk", code: 1, userInfo: [NSLocalizedDescriptionKey: "no microphone input"]) }
-        converter = AVAudioConverter(from: format, to: Self.target)
+        guard let converter = AVAudioConverter(from: format, to: Self.target) else {
+            throw NSError(domain: "talk", code: 2, userInfo: [NSLocalizedDescriptionKey: "unsupported microphone format"])
+        }
+        // The tap (audio thread) gets its own reference; `self.converter` is only touched on main after the tap is gone.
+        self.converter = converter
         lock.lock(); samples.removeAll(keepingCapacity: false); lock.unlock()
         input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
-            self?.append(buffer)
+            self?.append(buffer, with: converter)
         }
         engine.prepare()
         try engine.start()
@@ -51,8 +55,7 @@ final class Recorder {
         return out
     }
 
-    private func append(_ buffer: AVAudioPCMBuffer) {
-        guard let converter else { return }
+    private func append(_ buffer: AVAudioPCMBuffer, with converter: AVAudioConverter) {
         let out = Self.convert(buffer, with: converter)
         lock.lock(); samples.append(contentsOf: out); lock.unlock()
         guard let onLevel, !out.isEmpty else { return }

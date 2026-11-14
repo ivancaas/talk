@@ -29,7 +29,10 @@ final class Hotkey {
             case "opt", "option", "alt": mods |= UInt32(optionKey)
             case "ctrl", "control": mods |= UInt32(controlKey)
             case "shift": mods |= UInt32(shiftKey)
-            default: key = keyCodes[part]
+            default:
+                // One key, and it must be known: a typo like "optn+space" must not register bare Space.
+                guard key == nil, let code = keyCodes[part] else { return nil }
+                key = code
             }
         }
         guard let key else { return nil }
