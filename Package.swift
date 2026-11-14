@@ -12,6 +12,11 @@ let package = Package(
             name: "Talk",
             dependencies: [.product(name: "FluidAudio", package: "FluidAudio")],
             swiftSettings: [.swiftLanguageMode(.v5)]
-        )
+        ),
+        .testTarget(
+            name: "TalkTests",
+            dependencies: ["Talk"],
+            swiftSettings: [.swiftLanguageMode(.v5)]
+        ),
     ]
 )
