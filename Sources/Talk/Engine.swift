@@ -39,8 +39,14 @@ final class Engine {
     }
 
     func transcribe(_ samples: [Float]) async throws -> String {
+        guard let result = try await transcribeDetailed(samples) else { return "" }
+        return result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Full result with token timings (used by the `talk transcribe` CLI for subtitles/JSON).
+    func transcribeDetailed(_ samples: [Float]) async throws -> ASRResult? {
         prepare()
-        guard let loading else { return "" }
+        guard let loading else { return nil }
         let manager: AsrManager
         do { manager = try await loading.value } catch {
             self.loading = nil
@@ -52,7 +58,7 @@ final class Engine {
         let (leveled, gainDB) = Level.normalize(samples)
         let result = try await manager.transcribe(leveled, decoderState: &state)
         log("transcribed \(String(format: "%.1f", Double(samples.count) / 16000)) s audio in \(ms(since: t0)) ms, gain \(String(format: "%+.1f", gainDB)) dB")
-        return result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return result
     }
 
     /// Drops every reference to the CoreML models so their memory is returned.
@@ -69,7 +75,11 @@ final class Engine {
 
 func ms(since t: Date) -> Int { Int(Date().timeIntervalSince(t) * 1000) }
 
+/// Set by `talk transcribe --quiet`.
+nonisolated(unsafe) var quietLog = false
+
 func log(_ s: String) {
+    guard !quietLog else { return }
     FileHandle.standardError.write("[talk] \(s)\n".data(using: .utf8)!)
 }
 

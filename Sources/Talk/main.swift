@@ -201,7 +201,11 @@ final class App: NSObject, NSApplicationDelegate {
 // MARK: - entry
 
 let args = CommandLine.arguments
-if let i = args.firstIndex(of: "--transcribe"), i + 1 < args.count {
+if args.count > 1 && args[1] == "transcribe" {
+    TranscribeCLI.run(Array(args.dropFirst(2)))
+} else if args.count > 1 && ["help", "-h", "--help"].contains(args[1]) {
+    print("Talk: menu-bar dictation. Run with no arguments to start the app.\n\n" + TranscribeCLI.usage)
+} else if let i = args.firstIndex(of: "--transcribe"), i + 1 < args.count {
     // Self-test: load → transcribe → unload, with timings and memory.
     let url = URL(fileURLWithPath: args[i + 1])
     Task { @MainActor in

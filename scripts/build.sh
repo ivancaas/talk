@@ -70,3 +70,10 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 PLIST
 codesign --force --sign "$SIGN_NAME" --identifier "$BUNDLE_ID" "$APP"
 echo "installed $APP"
+
+# Command-line entry point: `talk transcribe <file>` (same binary, same model).
+BIN_DIR="${TALK_BIN_DIR:-$HOME/.local/bin}"
+mkdir -p "$BIN_DIR"
+ln -sf "$APP/Contents/MacOS/Talk" "$BIN_DIR/talk"
+echo "linked $BIN_DIR/talk"
+case ":$PATH:" in *":$BIN_DIR:"*) ;; *) echo "note: add $BIN_DIR to your PATH to run 'talk' from any shell" ;; esac
