@@ -1,0 +1,14 @@
+Talk
+Copyright (c) 2026 Ivan Carracedo. Released under the MIT License (see LICENSE).
+
+Talk builds on the following third-party work, which keeps its own license:
+
+- FluidAudio (https://github.com/FluidInference/FluidAudio)
+  Copyright FluidInference. Apache License 2.0.
+  Swift package used to run the speech model with CoreML.
+
+- Parakeet TDT 0.6B v3 (https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3)
+  Copyright NVIDIA Corporation. Creative Commons Attribution 4.0 (CC-BY-4.0).
+  The speech recognition model. Talk downloads the CoreML conversion published by
+  FluidInference (https://huggingface.co/FluidInference/parakeet-tdt-0.6b-v3-coreml)
+  on first launch; the model files are not part of this repository.
