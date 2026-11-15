@@ -11,7 +11,7 @@ no cloud, nothing leaves your computer.
 
 <p align="center">
   <img src="docs/images/setup-first-run-light.png" width="420" alt="Talk Setup window">
-  <img src="docs/images/settings-light.png" width="420" alt="Talk Settings window">
+  <img src="docs/images/settings.png" width="420" alt="Talk Settings window">
 </p>
 
 ## Features
@@ -81,7 +81,7 @@ Talk lives in the menu bar (no Dock icon). On first launch the **Setup** window 
 | | |
 |---|---|
 | Start / stop dictating | **⌥Space** (change it in Settings) |
-| While recording | a small pill under the mouse shows *Listening* → *Transcribing…* → *Pasted* |
+| While recording | a small pill at the bottom (or top) of the screen with the mouse shows *Listening* → *Transcribing…* → *Pasted* |
 | Setup, Settings, About | menu-bar icon |
 
 A dictation stops by itself after 15 minutes, or when the microphone is unplugged or switched, and still pastes

@@ -6,7 +6,7 @@ description: Transcribe audio or video files (or YouTube/web video URLs) to text
 # talk transcribe
 
 Local speech-to-text CLI from the Talk app (the repo where this skill lives, e.g. `~/talk`). No network, no API key, no cost.
-~330× real time on Apple Silicon (22 min of audio in ~4 s), ~400 MB RAM. First run after a Talk rebuild takes ~15 s
+~330× real time on Apple Silicon (22 min of audio in ~4 s), 65-400 MB RAM depending on length. First run after a Talk rebuild takes ~15 s
 (macOS compiles the model once); after that the model loads in ~0.2 s.
 
 ## Usage

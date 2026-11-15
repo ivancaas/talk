@@ -47,13 +47,19 @@ final class ModelWorker {
         failure = nil
         buffer.removeAll()
         if !Engine.isDownloaded { downloadFraction = 0 }
+        // Output and exit both go through one serial queue, so a final error line is handled before the exit.
+        let events = DispatchQueue(label: "talk.model-worker")
         fromWorker.fileHandleForReading.readabilityHandler = { [weak self] h in
             let data = h.availableData
-            Task { @MainActor in self?.received(data) }
+            if data.isEmpty { h.readabilityHandler = nil }  // EOF: stop, or the handler fires in a loop
+            let target = self
+            events.async { Task { @MainActor in target?.received(data) } }
         }
         p.terminationHandler = { [weak self] proc in
             let status = proc.terminationStatus
-            Task { @MainActor in self?.exited(proc, status: status) }
+            // Give the last output line a moment to arrive before reporting the exit.
+            let target = self
+            events.asyncAfter(deadline: .now() + 0.2) { Task { @MainActor in target?.exited(proc, status: status) } }
         }
         do {
             try p.run()
@@ -85,6 +91,14 @@ final class ModelWorker {
         var count = UInt32(samples.count).littleEndian
         withUnsafeBytes(of: &count) { request.append(contentsOf: $0) }
         samples.withUnsafeBytes { request.append(contentsOf: $0) }
+        // A hung worker must not leave the app in "Transcribing…": allow 30 s plus the audio's own length.
+        let limit = 30 + Double(samples.count) / 16000
+        let watchdog = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(limit))
+            guard !Task.isCancelled, let self, !self.replyWaiters.isEmpty else { return }
+            self.fail("the model worker did not answer within \(Int(limit)) s")
+        }
+        defer { watchdog.cancel() }
         return try await withCheckedThrowingContinuation { cont in
             replyWaiters.append(cont)
             DispatchQueue.global(qos: .userInitiated).async {
