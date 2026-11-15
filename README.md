@@ -1,47 +1,164 @@
 # Talk
 
-Menu-bar dictation for macOS. Press **⌥Space**, speak, press **⌥Space** again: the text is pasted into the focused app.
+**Private, lightweight dictation for macOS.** Press **⌥Space**, speak, press **⌥Space** again: your words are
+typed into whatever app you're using. Speech recognition runs entirely on your Mac's Neural Engine — no account,
+no cloud, nothing leaves your computer.
 
-- Engine: Parakeet TDT 0.6B v3 (CoreML, Neural Engine) via FluidAudio 0.18.2, multilingual, fully local.
-- Memory: the model is loaded when you start dictating (≈0.25 s, overlapped with your speech) and released right after the text is pasted. The mic is only open while recording.
-- Status pill: a small floating pill on the screen under the mouse shows Listening (dots follow your voice) → Transcribing… → Pasted. It never takes focus.
-- Model files: `~/Library/Application Support/Talk/Models/` (~600 MB, downloaded once).
+[![CI](https://github.com/ivancaas/talk/actions/workflows/ci.yml/badge.svg)](https://github.com/ivancaas/talk/actions/workflows/ci.yml)
+![macOS 14+](https://img.shields.io/badge/macOS-14%2B-blue)
+![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-M1%2B-black)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-## Requirements
-- Apple Silicon Mac (M1 or later), macOS 14+.
-- Swift 6 toolchain: Xcode 16+ or just the Command Line Tools (`xcode-select --install`).
-- Internet on first build (fetches FluidAudio) and first launch (downloads the model, ~600 MB, once).
+<p align="center">
+  <img src="docs/images/setup-first-run-light.png" width="420" alt="Talk Setup window">
+  <img src="docs/images/settings-light.png" width="420" alt="Talk Settings window">
+</p>
 
-## Build / install
-    git clone https://github.com/ivancaas/talk.git && cd talk
-    scripts/build.sh        # → /Applications/Talk.app
-    open /Applications/Talk.app
+## Features
 
-Talk appears in the menu bar (no Dock icon). On first launch it downloads the model in the background
-(a few minutes, depending on your connection); the first dictation waits for it to finish.
-First run asks for Microphone and Accessibility (needed to paste): grant both (if pasting still doesn't work, quit and reopen Talk).
+- **One shortcut, any app.** Dictate into Mail, Slack, your editor, a browser — anywhere you can type.
+- **Fully local.** [Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) on the Neural
+  Engine via [FluidAudio](https://github.com/FluidInference/FluidAudio). Works offline after the first download.
+- **25 languages, detected automatically** — English, Spanish, French, German, Italian, Portuguese and most other
+  European languages, with punctuation and capitalisation.
+- **Fast.** A 3-second sentence is transcribed in about 0.1 s, a minute of speech in about 0.6 s.
+- **Tiny when idle.** See [Lightweight by design](#lightweight-by-design).
+- **Guided setup.** A Setup window checks the microphone, Accessibility and the speech model, and shows you how
+  to fix whatever is missing.
+- **Command-line transcription.** `talk transcribe` turns audio, video or a video URL into text, SRT/VTT
+  subtitles or timed JSON.
 
-Signing: the first build creates a self-signed "Talk Local Signing" certificate in your login keychain
-(macOS may ask once to let codesign use it: choose Always Allow). Every build is signed with it, so the
-Accessibility permission survives rebuilds; no Apple developer account needed.
+## Lightweight by design
 
-## Transcribe files from the command line
-`scripts/build.sh` also links `~/.local/bin/talk` (override with `TALK_BIN_DIR`). Same model, fully local; works
-without the menu-bar app running (it loads its own copy of the model, ~0.2 s warm).
+Local dictation apps usually keep their speech model in memory all day. Talk doesn't:
 
-    talk transcribe meeting.m4a                      # plain text to stdout, paragraphs at long pauses
-    talk transcribe -t lecture.mp4                   # one line per sentence, [hh:mm:ss] prefix
-    talk transcribe -f srt -o video.srt video.mov    # subtitles (also: vtt, json; -w adds word timings to json)
-    talk transcribe -f json -d out/ *.mp3            # one file per input into out/
-    talk transcribe "https://www.youtube.com/watch?v=..."   # fetched with yt-dlp
+- The model runs in a small helper process that starts **when you start speaking** and loads the model while
+  you talk (about a third of a second), so you don't wait for it.
+- The helper **exits as soon as the text is pasted**, which hands every byte of the model's memory, including
+  the Neural Engine's copy, straight back to macOS.
+- The microphone is open **only while you dictate**. No windows, timers or background work while idle.
 
-- Inputs: anything AVFoundation reads (wav, mp3, m4a, aac, flac, aiff, mp4, mov…); mkv, webm, ogg, opus etc. go
-  through `ffmpeg` (`brew install ffmpeg`). URLs need `yt-dlp`.
-- Text goes to stdout, progress to stderr (`-q` silences it); exit code 1 if any input failed. Made for scripts and
-  AI agents: `talk transcribe --help` documents every option.
-- Speed: a 22-minute file took 4 s (≈330× real time) and peaked at 380 MB.
+Measured on a MacBook Pro (M1 Pro, 32 GB, macOS 15.8):
 
-## Config (`~/.config/talk/config.json`, restart Talk after editing)
-    { "hotkey": "opt+space", "pill": "bottom", "unloadAfterSeconds": 0 }
+| | Talk |
+|---|---|
+| Memory while idle (Activity Monitor) | **≈ 10 MB** (28 MB resident) |
+| Memory after a dictation | back to idle the moment the text is pasted |
+| App size | 20 MB (+ 600 MB model, downloaded once) |
+| Start helper + load model | ≈ 0.3 s, overlapped with your speech |
+| Transcribing a 3 s / 60 s dictation | ≈ 0.1 s / 0.6 s |
+| `talk transcribe`, 98 s recording | 1.3 s total, 65 MB peak |
 
-`hotkey`: e.g. `ctrl+opt+d`, `f13`, `cmd+shift+space`. `pill`: `bottom` or `top`. `unloadAfterSeconds`: keep the model warm for N s after a dictation.
+Settings → *Lightweight by design* shows Talk's live memory use. If you dictate often and want the next
+dictation to start instantly, *Keep the model loaded after dictating* trades memory for speed.
+
+## Install
+
+Requirements: Apple Silicon Mac (M1 or later), macOS 14 Sonoma or later, Xcode 16+ or the Command Line Tools
+(`xcode-select --install`).
+
+```bash
+git clone https://github.com/ivancaas/talk.git
+cd talk
+scripts/build.sh            # builds, signs and installs /Applications/Talk.app
+open /Applications/Talk.app
+```
+
+Talk lives in the menu bar (no Dock icon). On first launch the **Setup** window walks you through:
+
+1. **Microphone** — to hear you.
+2. **Accessibility** — to paste the text into the app you're typing in.
+3. **Speech model** — a one-time ~600 MB download, with progress.
+
+> **What `scripts/build.sh` does to your Mac:** it creates a self-signed code-signing certificate called
+> "Talk Local Signing" in your login keychain (once), quits a running Talk, replaces `/Applications/Talk.app`, and
+> links `~/.local/bin/talk`. The certificate keeps the same signature across rebuilds, so macOS remembers the
+> Accessibility permission. No Apple developer account is needed.
+
+## Usage
+
+| | |
+|---|---|
+| Start / stop dictating | **⌥Space** (change it in Settings) |
+| While recording | a small pill under the mouse shows *Listening* → *Transcribing…* → *Pasted* |
+| Setup, Settings, About | menu-bar icon |
+
+### Settings
+
+Shortcut, pill position (top or bottom of the screen), launch at login, and how long to keep the model loaded.
+Changes apply right away. They are stored in `~/.config/talk/config.json`:
+
+```json
+{ "hotkey": "opt+space", "pill": "bottom", "unloadAfterSeconds": 0 }
+```
+
+`hotkey` accepts combinations like `ctrl+opt+d`, `cmd+shift+space` or `f13`.
+
+### Transcribe files from the command line
+
+```bash
+talk transcribe meeting.m4a                       # plain text, paragraphs at long pauses
+talk transcribe -t lecture.mp4                    # one line per sentence with [hh:mm:ss]
+talk transcribe -f srt -o video.srt video.mov     # subtitles (also vtt, json; -w adds word timings)
+talk transcribe -f json -d out/ *.mp3             # one file per input
+talk transcribe "https://www.youtube.com/watch?v=..."
+```
+
+- Reads anything AVFoundation opens (wav, mp3, m4a, aac, flac, aiff, mp4, mov…). mkv, webm, ogg and opus need
+  `ffmpeg`; URLs need `yt-dlp` (both via Homebrew).
+- Text goes to stdout and progress to stderr (`-q` silences it). Exit code 1 if any input failed.
+  Made for scripts and AI agents: `talk transcribe --help` lists every option.
+- macOS ships an unrelated `/usr/bin/talk`. If it comes first on your `PATH`, call `~/.local/bin/talk`, or put
+  `~/.local/bin` first.
+
+## Accuracy
+
+Word error rate on 243 clips (LibriSpeech test-clean/other, Multilingual LibriSpeech Spanish, plus long, quiet,
+noisy and loud variants):
+
+| Set | WER |
+|---|---|
+| English, clean + hard | 2.5 % |
+| Spanish | 2.9 % |
+| Long dictation, 25–45 s | 2.4–3.0 % |
+| Quiet speech, English / Spanish | 3.3 / 3.6 % |
+| Noisy speech, English / Spanish | 2.1 / 13.7 % |
+| **All** | **3.7 %** |
+
+Quiet speech is raised to a normal level before transcription, which keeps the model in the right language.
+Known weak spot: in noisy Spanish recordings the model occasionally switches to English.
+
+## Privacy
+
+Audio is recorded only while you dictate, kept in memory, transcribed on your Mac and discarded. Talk makes no
+network requests except downloading the speech model from Hugging Face on first use (and `yt-dlp` when you pass
+a URL to `talk transcribe`). No analytics, no telemetry.
+
+## Uninstall
+
+```bash
+osascript -e 'quit app "Talk"'
+rm -rf /Applications/Talk.app ~/.local/bin/talk ~/.config/talk "$HOME/Library/Application Support/Talk"
+tccutil reset All com.ivancarracedo.talk
+```
+
+Optionally delete the "Talk Local Signing" certificate in Keychain Access.
+
+## Development
+
+```bash
+swift build -c release    # build
+swift test                # unit tests
+```
+
+The code is a single Swift package (`Sources/Talk`): `Recorder` (microphone → 16 kHz), `Level` (quiet-speech
+gain), `Engine` (model load/transcribe), `ModelWorker` (runs `Engine` in a helper process
+that exits after each dictation), `Paster`, `HUD` (status pill), `SetupWindow` / `SettingsWindow`
+and `Transcribe` (CLI). Window design notes are in [docs/GUI.md](docs/GUI.md).
+
+Contributions are welcome — please open an issue first for larger changes.
+
+## License
+
+[MIT](LICENSE) © 2026 Ivan Carracedo. Third-party components and the speech model keep their own licenses — see
+[NOTICE](NOTICE). Parakeet TDT 0.6B v3 is © NVIDIA, licensed under CC-BY-4.0.
