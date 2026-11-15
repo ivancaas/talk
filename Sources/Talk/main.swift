@@ -247,11 +247,31 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
         state = .recording
         NSSound(named: "Tink")?.play()
         recorder.onLevel = { [weak self] level in self?.hud.setLevel(level) }
+        recorder.onInterrupted = { [weak self] in
+            guard let self, self.state == .recording else { return }
+            log("microphone changed while recording: transcribing what was heard")
+            self.stopAndTranscribe()
+        }
         engine.prepare()  // load the model while the user is talking; transcribe() waits for it
         hud.show(.listening)
+        // A forgotten dictation must not record forever: stop and transcribe after the limit.
+        let started = Date()
+        maxLengthTask?.cancel()
+        maxLengthTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(App.maxRecordingSeconds))
+            guard let self, !Task.isCancelled, self.state == .recording,
+                  Date().timeIntervalSince(started) >= App.maxRecordingSeconds - 1 else { return }
+            log("dictation reached \(Int(App.maxRecordingSeconds / 60)) min: stopping")
+            self.stopAndTranscribe()
+        }
     }
 
+    static let maxRecordingSeconds: Double = 15 * 60
+    private var maxLengthTask: Task<Void, Never>?
+
     func stopAndTranscribe() {
+        maxLengthTask?.cancel()
+        recorder.onInterrupted = nil
         let samples = recorder.stop()
         NSSound(named: "Pop")?.play()
         recorder.onLevel = nil
@@ -313,7 +333,9 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
 let args = CommandLine.arguments
 signal(SIGPIPE, SIG_IGN)  // a model worker that exits early must not take the app down with it
-if args.count > 1 && args[1] == "--model-worker" {
+if args.count > 1 && ["--version", "version"].contains(args[1]) {
+    print("Talk \(AppVersion.version)")
+} else if args.count > 1 && args[1] == "--model-worker" {
     WorkerMain.run()
 } else if let i = args.firstIndex(of: "--worker-test"), i + 1 < args.count {
     MainActor.assumeIsolated { SelfTest.workerTest(files: args[(i + 1)...].map { URL(fileURLWithPath: $0) }) }

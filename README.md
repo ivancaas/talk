@@ -71,8 +71,9 @@ Talk lives in the menu bar (no Dock icon). On first launch the **Setup** window 
 3. **Speech model** — a one-time ~600 MB download, with progress.
 
 > **What `scripts/build.sh` does to your Mac:** it creates a self-signed code-signing certificate called
-> "Talk Local Signing" in your login keychain (once), quits a running Talk, replaces `/Applications/Talk.app`, links
-> `~/.local/bin/talk`, and links the `talk-transcribe` agent skill into `~/.claude/skills` and `~/.agents/skills`. The certificate keeps the same signature across rebuilds, so macOS remembers the
+> "Talk Local Signing" in your login keychain (once), quits a running Talk, replaces `/Applications/Talk.app`,
+> links `~/.local/bin/talk`, and links the `talk-transcribe` agent skill into `~/.claude/skills` and
+> `~/.agents/skills`. The certificate keeps the same signature across rebuilds, so macOS remembers the
 > Accessibility permission. No Apple developer account is needed.
 
 ## Usage
@@ -82,6 +83,9 @@ Talk lives in the menu bar (no Dock icon). On first launch the **Setup** window 
 | Start / stop dictating | **⌥Space** (change it in Settings) |
 | While recording | a small pill under the mouse shows *Listening* → *Transcribing…* → *Pasted* |
 | Setup, Settings, About | menu-bar icon |
+
+A dictation stops by itself after 15 minutes, or when the microphone is unplugged or switched, and still pastes
+what it heard.
 
 ### Settings
 
@@ -159,7 +163,7 @@ gain), `Engine` (model load/transcribe), `ModelWorker` (runs `Engine` in a helpe
 that exits after each dictation), `Paster`, `HUD` (status pill), `SetupWindow` / `SettingsWindow`
 and `Transcribe` (CLI). Window design notes are in [docs/GUI.md](docs/GUI.md).
 
-Contributions are welcome — please open an issue first for larger changes.
+Contributions are welcome: see [CONTRIBUTING.md](CONTRIBUTING.md). Changes are listed in [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 

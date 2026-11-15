@@ -71,3 +71,19 @@ struct LevelTests {
         #expect(Level.normalize([Float](repeating: 0, count: 16000)).gainDB == 0)
     }
 }
+
+struct OutputNameTests {
+    @Test func usesTheFileNameAndAvoidsCollisions() {
+        TranscribeCLI.usedNames.removeAll()
+        #expect(TranscribeCLI.outputName(for: "/a/b/talk.mp3", ext: "srt") == "talk.srt")
+        #expect(TranscribeCLI.outputName(for: "/c/talk.m4a", ext: "srt") == "talk-2.srt")
+        #expect(TranscribeCLI.outputName(for: "https://www.youtube.com/watch?v=abc123", ext: "txt") == "abc123.txt")
+        #expect(TranscribeCLI.outputName(for: "https://example.com/media/episode.mp3", ext: "json") == "episode.json")
+    }
+}
+
+struct PasterTests {
+    @Test @MainActor func findsTheVKeyInTheCurrentLayout() {
+        #expect(Paster.keyCodeForV() < 128)
+    }
+}

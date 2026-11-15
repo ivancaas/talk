@@ -236,7 +236,7 @@ enum TranscribeCLI {
         if path == nil, let dir = opts.outDir {
             let d = URL(fileURLWithPath: (dir as NSString).expandingTildeInPath)
             try FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
-            path = d.appendingPathComponent((input as NSString).deletingPathExtension + "." + opts.format.rawValue).path
+            path = d.appendingPathComponent(outputName(for: input, ext: opts.format.rawValue)).path
         }
         if let path, path != "-" {
             try out.write(toFile: (path as NSString).expandingTildeInPath, atomically: true, encoding: .utf8)
@@ -245,6 +245,30 @@ enum TranscribeCLI {
             let body = multi && opts.format == .txt ? "==> \(input) <==\n\(out)\n" : out
             FileHandle.standardOutput.write(body.data(using: .utf8)!)
         }
+    }
+
+    /// Names already written by this run, so `a/talk.mp3` and `b/talk.mp3` don't overwrite each other.
+    nonisolated(unsafe) static var usedNames = Set<String>()
+
+    /// `--out-dir` file name for an input: its base name (or a URL's last path part) plus the format,
+    /// with -2, -3… appended when an earlier input of this run already took the name.
+    static func outputName(for input: String, ext: String) -> String {
+        var base: String
+        if let url = URL(string: input), let scheme = url.scheme, scheme.hasPrefix("http") {
+            let last = url.deletingPathExtension().lastPathComponent
+            base = last.isEmpty || last == "/" ? (url.host ?? "download") : last
+            if let v = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "v" })?.value {
+                base = v  // YouTube watch?v=ID
+            }
+        } else {
+            base = ((input as NSString).lastPathComponent as NSString).deletingPathExtension
+        }
+        base = base.replacingOccurrences(of: "/", with: "_")
+        if base.isEmpty { base = "transcript" }
+        var name = "\(base).\(ext)", n = 2
+        while usedNames.contains(name) { name = "\(base)-\(n).\(ext)"; n += 1 }
+        usedNames.insert(name)
+        return name
     }
 
     static func timecode(_ t: Double, sep: Character?) -> String {

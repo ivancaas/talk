@@ -60,14 +60,16 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>CFBundleExecutable</key><string>Talk</string>
     <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>1.0</string>
-    <key>CFBundleVersion</key><string>1</string>
+    <key>CFBundleShortVersionString</key><string>__VERSION__</string>
+    <key>CFBundleVersion</key><string>__VERSION__</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSUIElement</key><true/>
     <key>NSMicrophoneUsageDescription</key><string>Talk records your voice only while dictation is on, and transcribes it on this Mac.</string>
 </dict>
 </plist>
 PLIST
+VERSION=$(.build/release/Talk --version | awk '{print $2}')
+sed -i '' "s/__VERSION__/$VERSION/g" "$APP/Contents/Info.plist"
 # Agent skill ships inside the app, so it always matches the installed binary (not the working tree).
 mkdir -p "$APP/Contents/Resources/skills"
 cp -R .claude/skills/talk-transcribe "$APP/Contents/Resources/skills/"

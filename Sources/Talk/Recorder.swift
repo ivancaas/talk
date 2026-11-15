@@ -8,6 +8,10 @@ final class Recorder {
     private var samples: [Float] = []
     /// Called on the main queue with a 0...1 mic level while recording.
     var onLevel: ((Float) -> Void)?
+    /// Called on the main queue when the input device changes or disappears mid-recording (headset unplugged,
+    /// AirPods switched away). The engine has stopped by then; call `stop()` to collect what was recorded.
+    var onInterrupted: (() -> Void)?
+    private var configObserver: NSObjectProtocol?
 
     static let target = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false)!
 
@@ -28,10 +32,16 @@ final class Recorder {
         engine.prepare()
         try engine.start()
         self.engine = engine
+        configObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main) { [weak self] _ in
+            self?.onInterrupted?()
+        }
     }
 
     /// Stops and releases the engine (mic indicator goes off), returns the recording.
     func stop() -> [Float] {
+        if let configObserver { NotificationCenter.default.removeObserver(configObserver) }
+        configObserver = nil
         if let engine {
             engine.inputNode.removeTap(onBus: 0)
             engine.stop()
