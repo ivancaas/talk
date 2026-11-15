@@ -68,6 +68,9 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </dict>
 </plist>
 PLIST
+# Agent skill ships inside the app, so it always matches the installed binary (not the working tree).
+mkdir -p "$APP/Contents/Resources/skills"
+cp -R .claude/skills/talk-transcribe "$APP/Contents/Resources/skills/"
 codesign --force --sign "$SIGN_NAME" --identifier "$BUNDLE_ID" "$APP"
 echo "installed $APP"
 
@@ -76,4 +79,14 @@ BIN_DIR="${TALK_BIN_DIR:-$HOME/.local/bin}"
 mkdir -p "$BIN_DIR"
 ln -sf "$APP/Contents/MacOS/Talk" "$BIN_DIR/talk"
 echo "linked $BIN_DIR/talk"
+# Point agents at the installed skill (Claude Code reads ~/.claude/skills, other agents ~/.agents/skills).
+for SKILLS in "$HOME/.claude/skills" "$HOME/.agents/skills"; do
+    LINK="$SKILLS/talk-transcribe"
+    if [ -e "$LINK" ] && [ ! -L "$LINK" ]; then
+        echo "note: $LINK is a real folder, left alone"; continue
+    fi
+    mkdir -p "$SKILLS"
+    ln -sfn "$APP/Contents/Resources/skills/talk-transcribe" "$LINK"
+    echo "linked $LINK"
+done
 case ":$PATH:" in *":$BIN_DIR:"*) ;; *) echo "note: add $BIN_DIR to your PATH to run 'talk' from any shell" ;; esac

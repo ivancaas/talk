@@ -71,8 +71,8 @@ Talk lives in the menu bar (no Dock icon). On first launch the **Setup** window 
 3. **Speech model** — a one-time ~600 MB download, with progress.
 
 > **What `scripts/build.sh` does to your Mac:** it creates a self-signed code-signing certificate called
-> "Talk Local Signing" in your login keychain (once), quits a running Talk, replaces `/Applications/Talk.app`, and
-> links `~/.local/bin/talk`. The certificate keeps the same signature across rebuilds, so macOS remembers the
+> "Talk Local Signing" in your login keychain (once), quits a running Talk, replaces `/Applications/Talk.app`, links
+> `~/.local/bin/talk`, and links the `talk-transcribe` agent skill into `~/.claude/skills` and `~/.agents/skills`. The certificate keeps the same signature across rebuilds, so macOS remembers the
 > Accessibility permission. No Apple developer account is needed.
 
 ## Usage
@@ -108,6 +108,8 @@ talk transcribe "https://www.youtube.com/watch?v=..."
   `ffmpeg`; URLs need `yt-dlp` (both via Homebrew).
 - Text goes to stdout and progress to stderr (`-q` silences it). Exit code 1 if any input failed.
   Made for scripts and AI agents: `talk transcribe --help` lists every option.
+- **For AI agents:** `scripts/build.sh` installs a `talk-transcribe` skill inside `Talk.app` and links it from
+  `~/.claude/skills` and `~/.agents/skills`, so Claude Code and other agents know how to use the CLI.
 - macOS ships an unrelated `/usr/bin/talk`. If it comes first on your `PATH`, call `~/.local/bin/talk`, or put
   `~/.local/bin` first.
 
@@ -139,6 +141,7 @@ a URL to `talk transcribe`). No analytics, no telemetry.
 ```bash
 osascript -e 'quit app "Talk"'
 rm -rf /Applications/Talk.app ~/.local/bin/talk ~/.config/talk "$HOME/Library/Application Support/Talk"
+rm -f ~/.claude/skills/talk-transcribe ~/.agents/skills/talk-transcribe
 tccutil reset All com.ivancarracedo.talk
 ```
 

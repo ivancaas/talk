@@ -46,6 +46,8 @@ talk transcribe --help
 ```bash
 command -v talk || ls /Applications/Talk.app/Contents/MacOS/Talk
 ```
-The binary is `/Applications/Talk.app/Contents/MacOS/Talk` (call it with `transcribe ...` directly). To (re)install:
+This skill is installed inside the app (`/Applications/Talk.app/Contents/Resources/skills/`); its source is
+`.claude/skills/talk-transcribe` in the Talk repo. The binary is `/Applications/Talk.app/Contents/MacOS/Talk` (call it
+with `transcribe ...` directly). To (re)install:
 `scripts/build.sh` from the Talk repo — this restarts the menu-bar app; ask the user before rebuilding.
 The model (~600 MB) downloads on first use into `~/Library/Application Support/Talk/Models/`.
