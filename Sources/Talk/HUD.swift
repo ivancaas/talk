@@ -7,7 +7,8 @@ import SwiftUI
 @MainActor
 final class HUD {
     enum Phase: Equatable {
-        case loading, listening, transcribing, done(String), error(String)
+        /// `downloading`: fraction 0...1 of the first-run model download.
+        case loading, downloading(Double), listening, transcribing, done(String), error(String)
     }
 
     final class Model: ObservableObject {
@@ -18,7 +19,8 @@ final class HUD {
     let model = Model()
     private var panel: NSPanel?
     private var hideWork: DispatchWorkItem?
-    private let atTop: Bool
+    /// Top or bottom of the screen; Settings changes it while Talk runs.
+    var atTop: Bool
     private static let size = NSSize(width: 360, height: 64)
 
     init(atTop: Bool) { self.atTop = atTop }
@@ -30,6 +32,12 @@ final class HUD {
         if panel == nil { panel = makePanel() }
         position()
         panel?.orderFrontRegardless()
+    }
+
+    /// Keeps a visible download pill in step with the download.
+    func setDownload(_ fraction: Double) {
+        guard case .downloading = model.phase else { return }
+        model.phase = .downloading(fraction)
     }
 
     func setLevel(_ level: Float) {
@@ -100,12 +108,13 @@ private struct PillView: View {
         .shadow(color: .black.opacity(0.25), radius: 8, y: 2)
         .fixedSize()
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .animation(.easeOut(duration: 0.15), value: model.phase)
+        .animation(.easeOut(duration: 0.15), value: model.phase.kind)
     }
 
     private var label: String {
         switch model.phase {
         case .loading: "Loading model…"
+        case .downloading(let f): "Downloading speech model… \(Int(f * 100)) %"
         case .listening: "Listening"
         case .transcribing: "Transcribing…"
         case .done(let s), .error(let s): s
@@ -122,7 +131,7 @@ private struct PillView: View {
 
     @ViewBuilder private var indicator: some View {
         switch model.phase {
-        case .loading, .transcribing: Dots(level: 0, pulsing: true)
+        case .loading, .downloading, .transcribing: Dots(level: 0, pulsing: true)
         case .listening: Dots(level: model.level, pulsing: false)
         case .done: Image(systemName: "checkmark").font(.system(size: 13, weight: .semibold))
         case .error: Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 13))
@@ -156,11 +165,25 @@ private struct Dots: View {
     }
 }
 
+private extension HUD.Phase {
+    /// The phase without its text or number, so a ticking percentage doesn't replay the transition.
+    var kind: Int {
+        switch self {
+        case .loading: 0
+        case .downloading: 1
+        case .listening: 2
+        case .transcribing: 3
+        case .done: 4
+        case .error: 5
+        }
+    }
+}
+
 extension HUD {
     /// Renders every pill state to PNGs (visual check without screenshots).
     static func renderPreviews(to dir: URL) {
         let states: [(String, HUD.Phase, Float)] = [
-            ("loading", .loading, 0), ("listening", .listening, 0.6), ("transcribing", .transcribing, 0),
+            ("loading", .loading, 0), ("downloading", .downloading(0.42), 0), ("listening", .listening, 0.6), ("transcribing", .transcribing, 0),
             ("done", .done("Pasted"), 0), ("error", .error("Nothing heard"), 0),
         ]
         for (name, phase, level) in states {

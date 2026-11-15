@@ -4,33 +4,81 @@ import Foundation
 /// Parakeet TDT v3 on the Neural Engine. Loaded on demand, released after use.
 @MainActor
 final class Engine {
-    /// Talk keeps its own copy of the model files, separate from other apps that use FluidAudio.
+    /// Talk keeps its own copy of the model, apart from FluidAudio's shared cache.
     static var modelsDir: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
         let folder = AsrModels.defaultCacheDirectory(for: .v3).lastPathComponent
         return base.appendingPathComponent("Talk/Models/\(folder)", isDirectory: true)
     }
 
+    // int8V2 on the Neural Engine: measured best of the FluidAudio options (palettized .int8 doubles
+    // noisy-Spanish errors; CPU fp32 is ~2 points better there but much slower).
+    private static let precision = ParakeetEncoderPrecision.int8V2
+
+    /// True when every model file is on disk (nothing left to download).
+    static var isDownloaded: Bool {
+        if seenOnDisk { return true }
+        seenOnDisk = AsrModels.modelsExist(at: modelsDir, version: .v3, encoderPrecision: precision)
+        return seenOnDisk
+    }
+    private static var seenOnDisk = false
+
     private var loading: Task<AsrManager, Error>?
+    private var generation = 0
 
     /// True once the model is in memory (not just loading).
     private(set) var isReady = false
 
+    /// 0...1 while the model files are being downloaded, nil otherwise.
+    private(set) var downloadFraction: Double? { didSet { onDownloadChange?() } }
+    /// Why the last download or load failed (cleared by the next attempt).
+    private(set) var lastError: String? { didSet { onDownloadChange?() } }
+    /// Called on the main actor when `downloadFraction` or `lastError` changes.
+    var onDownloadChange: (() -> Void)?
+
     /// Starts loading in the background (call when recording starts so load overlaps speech).
+    /// Downloads the model first when it is not on disk yet, reporting `downloadFraction`.
     func prepare() {
         guard loading == nil else { return }
+        generation += 1
+        let generation = generation
+        let downloading = !Self.isDownloaded
+        lastError = nil
+        if downloading { downloadFraction = 0 }
+        let report: ProgressHandler = { [weak self] p in
+            let fraction = p.fractionCompleted
+            Task { @MainActor in self?.downloadProgress(fraction, generation) }
+        }
+        let progress = downloading ? report : nil
         loading = Task {
             let t0 = Date()
-            // int8V2 on the Neural Engine: measured best of the FluidAudio options (palettized .int8 doubles
-            // noisy-Spanish errors; CPU fp32 is ~2 points better there but much slower).
-            let models = try await AsrModels.downloadAndLoad(
-                to: Self.modelsDir, version: .v3, encoderPrecision: .int8V2)
-            let manager = AsrManager(config: .default)
-            try await manager.loadModels(models)
-            self.isReady = true
-            log("model loaded in \(ms(since: t0)) ms from \(Self.modelsDir.path)")
-            return manager
+            do {
+                let models = try await AsrModels.downloadAndLoad(
+                    to: Self.modelsDir, version: .v3, encoderPrecision: Self.precision, progressHandler: progress)
+                let manager = AsrManager(config: .default)
+                try await manager.loadModels(models)
+                if self.generation == generation {
+                    self.isReady = true
+                    if downloading { self.downloadFraction = nil }
+                }
+                log("model loaded in \(ms(since: t0)) ms from \(Self.modelsDir.path)")
+                return manager
+            } catch {
+                if self.generation == generation {
+                    // Forget the failed attempt so the next prepare() tries again.
+                    self.loading = nil
+                    if downloading { self.downloadFraction = nil }
+                    self.lastError = error.localizedDescription
+                }
+                throw error
+            }
         }
+    }
+
+    /// Progress arrives on any queue and may trail the end of the download: ignore stale reports.
+    private func downloadProgress(_ fraction: Double, _ generation: Int) {
+        guard self.generation == generation, let shown = downloadFraction else { return }
+        downloadFraction = max(shown, min(1, fraction))
     }
 
     /// Waits until the model is ready (returns at once when it is already loaded).
@@ -65,7 +113,9 @@ final class Engine {
     func unload() async {
         guard let loading else { return }
         self.loading = nil
+        generation += 1
         isReady = false
+        if downloadFraction != nil { downloadFraction = nil }
         if let manager = try? await loading.value {
             await manager.cleanup()
         }

@@ -20,6 +20,11 @@ final class Hotkey {
         if status != noErr { log("hotkey \(spec) could not be registered (\(status)); is another app using it?"); return nil }
     }
 
+    /// Frees the key combination, so Settings can record and register another one.
+    deinit {
+        if let ref { UnregisterEventHotKey(ref) }
+    }
+
     static func parse(_ spec: String) -> (UInt32, UInt32)? {
         var mods: UInt32 = 0
         var key: UInt32?

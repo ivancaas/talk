@@ -3,12 +3,8 @@ import ApplicationServices
 
 /// Puts text into the focused app: clipboard + synthetic ⌘V, then restores the previous clipboard.
 enum Paster {
-    static func isTrusted(prompt: Bool) -> Bool {
-        let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: prompt] as CFDictionary
-        return AXIsProcessTrustedWithOptions(opts)
-    }
-
-    /// Returns false when Accessibility is missing (text is left on the clipboard).
+    /// Returns false when Accessibility is missing (text is left on the clipboard). Never prompts:
+    /// the caller sends the user to Setup, the one place that asks for the permission.
     @MainActor @discardableResult
     static func paste(_ text: String) -> Bool {
         let pb = NSPasteboard.general
@@ -18,7 +14,7 @@ enum Paster {
         pb.clearContents()
         pb.setString(text, forType: .string)
 
-        guard isTrusted(prompt: true) else {
+        guard Permissions.accessibility else {
             log("no Accessibility permission: text left on the clipboard")
             return false
         }

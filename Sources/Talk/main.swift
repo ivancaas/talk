@@ -1,62 +1,131 @@
 import AppKit
-import ServiceManagement
-
-struct Config: Codable {
-    var hotkey: String = "opt+space"
-    /// "bottom" or "top"
-    var pill: String = "bottom"
-    /// Seconds to keep the model after a dictation (0 = unload right away).
-    var unloadAfterSeconds: Double = 0
-
-    init() {}
-
-    /// Missing keys fall back to defaults, so older config files keep working.
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        hotkey = try c.decodeIfPresent(String.self, forKey: .hotkey) ?? hotkey
-        pill = try c.decodeIfPresent(String.self, forKey: .pill) ?? pill
-        unloadAfterSeconds = try c.decodeIfPresent(Double.self, forKey: .unloadAfterSeconds) ?? unloadAfterSeconds
-    }
-
-    static let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/talk/config.json")
-
-    static func load() -> Config {
-        guard let data = try? Data(contentsOf: url) else {
-            let c = Config()
-            try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            let enc = JSONEncoder(); enc.outputFormatting = [.prettyPrinted, .sortedKeys]
-            try? enc.encode(c).write(to: url)
-            return c
-        }
-        guard let c = try? JSONDecoder().decode(Config.self, from: data) else { return Config() }
-        return c
-    }
-}
 
 @MainActor
-final class App: NSObject, NSApplicationDelegate {
+final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
     enum State { case idle, recording, transcribing }
 
-    let config = Config.load()
+    private(set) var config = Config.load()
     let engine = Engine()
     let recorder = Recorder()
-    var hotkey: Hotkey?
-    var item: NSStatusItem!
+    private var hotkey: Hotkey?
+    /// True while Settings records a new shortcut; the old one is released meanwhile.
+    private var hotkeySuspended = false
+    var item: NSStatusItem?
+    private var statusLine: NSMenuItem?
     var state = State.idle { didSet { refreshIcon() } }
     var pending = 0
     var unloadTask: Task<Void, Never>?
     lazy var hud = HUD(atTop: config.pill == "top")
+    lazy var windows = Windows(app: self)
+    /// Self-tests (`--check-gui`, `--measure-idle`) never claim the global hotkey, load the model or prompt.
+    var selfTest = false
 
     func applicationDidFinishLaunching(_ n: Notification) {
         item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         refreshIcon()
-        hotkey = Hotkey(spec: config.hotkey) { [weak self] in
+        hotkey = makeHotkey(config.hotkey)
+        buildMenu()
+        engine.onDownloadChange = { [weak self] in self?.downloadChanged() }
+        log("ready, hotkey \(config.hotkey), footprint \(Int(footprintMB())) MB")
+        // First launch, or something dictation needs is missing: show the checklist.
+        let needsSetup = setupNeeded
+        guard !selfTest else { return }
+        if needsSetup { showSetup() }
+        warmUpIfNewBuild()
+    }
+
+    /// Clicking Talk in Finder while it already runs: there is no Dock icon, so show Settings.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        if !hasVisibleWindows { if setupNeeded { showSetup() } else { showSettings() } }
+        return false
+    }
+
+    // MARK: setup, settings
+
+    var setupNeeded: Bool {
+        Permissions.microphone != .granted || !Permissions.accessibility || !Engine.isDownloaded
+            || Config.loadError != nil || !hotkeyAvailable
+    }
+
+    var hotkeyAvailable: Bool { hotkey != nil || hotkeySuspended || selfTest }
+
+    private func makeHotkey(_ spec: String) -> Hotkey? {
+        guard !selfTest else { return nil }
+        return Hotkey(spec: spec) { [weak self] in
             Task { @MainActor in self?.toggle() }
         }
-        buildMenu()
-        _ = Paster.isTrusted(prompt: true)
-        log("ready, hotkey \(config.hotkey), footprint \(Int(footprintMB())) MB")
-        warmUpIfNewBuild()
+    }
+
+    /// Applies new settings while Talk runs and saves them. Returns a sentence when something could
+    /// not be applied (the shortcut is then left as it was).
+    func apply(_ new: Config) -> String? {
+        var new = new
+        var problem: String?
+        if new.hotkey != config.hotkey || hotkey == nil {
+            hotkey = nil  // release the old combination before asking for the new one
+            hotkeySuspended = false
+            hotkey = makeHotkey(new.hotkey)
+            if hotkey == nil && new.hotkey != config.hotkey && !selfTest {
+                problem = "\(Hotkey.display(new.hotkey)) can't be used (another app may have taken it). Kept \(Hotkey.display(config.hotkey))."
+                new.hotkey = config.hotkey
+                hotkey = makeHotkey(config.hotkey)
+            }
+        }
+        config = new
+        hud.atTop = config.pill == "top"
+        do { try config.save() } catch {
+            problem = "Couldn't save config.json: \(error.localizedDescription)"
+        }
+        return problem
+    }
+
+    func suspendHotkey() {
+        hotkey = nil
+        hotkeySuspended = true
+    }
+
+    func resumeHotkey() {
+        hotkeySuspended = false
+        if hotkey == nil { hotkey = makeHotkey(config.hotkey) }
+    }
+
+    /// Reads config.json again (after the user repaired it by hand).
+    func reloadConfig() {
+        let loaded = Config.load()
+        if Config.loadError == nil { _ = apply(loaded) }
+    }
+
+    /// Replaces an unreadable config.json with the defaults (the old file is kept as config.json.bak).
+    func resetConfig() {
+        do { _ = apply(try Config.resetToDefaults()) } catch {
+            log("config reset: \(error.localizedDescription)")
+        }
+    }
+
+    /// Fetches the model now (Setup's Download button), then releases it again.
+    func downloadModel() {
+        engine.prepare()
+        Task { @MainActor in
+            try? await engine.waitUntilLoaded()
+            scheduleUnload()
+        }
+    }
+
+    private func downloadChanged() {
+        if let fraction = engine.downloadFraction { hud.setDownload(fraction) }
+        windows.refresh()
+    }
+
+    @objc func showSetup() { windows.showSetup() }
+    @objc func showSettings() { windows.showSettings() }
+
+    @objc func showAbout() {
+        NSApp.activate(ignoringOtherApps: true)
+        let credits = NSAttributedString(
+            string: "Dictation that stays on your Mac.\nSpeech model: Parakeet TDT v3, run with FluidAudio.",
+            attributes: [.font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize),
+                         .foregroundColor: NSColor.secondaryLabelColor])
+        NSApp.orderFrontStandardAboutPanel(options: [.credits: credits])
     }
 
     /// After a rebuild, macOS recompiles the model for the Neural Engine (10-14 s per load for
@@ -92,31 +161,40 @@ final class App: NSObject, NSApplicationDelegate {
 
     func buildMenu() {
         let menu = NSMenu()
-        let title = hotkey == nil ? "Hotkey \(config.hotkey) unavailable — edit ~/.config/talk/config.json"
-                                  : "Toggle dictation: \(config.hotkey)"
-        menu.addItem(NSMenuItem(title: title, action: nil, keyEquivalent: ""))
+        menu.delegate = self
+        menu.autoenablesItems = false
+        let status = NSMenuItem(title: statusText, action: nil, keyEquivalent: "")
+        status.isEnabled = false
+        menu.addItem(status)
+        statusLine = status
         menu.addItem(.separator())
-        let login = NSMenuItem(title: "Launch at login", action: #selector(toggleLogin), keyEquivalent: "")
-        login.target = self
-        login.state = SMAppService.mainApp.status == .enabled ? .on : .off
-        menu.addItem(login)
-        let cfg = NSMenuItem(title: "Open config…", action: #selector(openConfig), keyEquivalent: "")
-        cfg.target = self
-        menu.addItem(cfg)
+        menu.addItem(withTitle: "Setup…", action: #selector(showSetup), keyEquivalent: "").target = self
+        menu.addItem(withTitle: "Settings…", action: #selector(showSettings), keyEquivalent: ",").target = self
         menu.addItem(.separator())
-        menu.addItem(NSMenuItem(title: "Quit Talk", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
-        item.menu = menu
+        menu.addItem(withTitle: "About Talk", action: #selector(showAbout), keyEquivalent: "").target = self
+        menu.addItem(withTitle: "Quit Talk", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        item?.menu = menu
     }
 
-    @objc func toggleLogin(_ sender: NSMenuItem) {
-        do {
-            if SMAppService.mainApp.status == .enabled { try SMAppService.mainApp.unregister() }
-            else { try SMAppService.mainApp.register() }
-        } catch { log("login item: \(error.localizedDescription)") }
-        sender.state = SMAppService.mainApp.status == .enabled ? .on : .off
+    /// The status line is worked out when the menu opens, so nothing polls while it is closed.
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        statusLine?.title = statusText
     }
 
-    @objc func openConfig() { NSWorkspace.shared.open(Config.url) }
+    var statusText: String {
+        let shortcut = Hotkey.display(config.hotkey)
+        if Config.loadError != nil { return "config.json can't be read: using defaults" }
+        if Permissions.microphone != .granted { return "Setup needed: Microphone" }
+        if !Permissions.accessibility { return "Setup needed: Accessibility" }
+        if let fraction = engine.downloadFraction { return "Downloading speech model… \(Int(fraction * 100)) %" }
+        if !Engine.isDownloaded { return "Setup needed: speech model" }
+        if !hotkeyAvailable { return "Shortcut \(shortcut) is unavailable" }
+        return switch state {
+        case .idle: "Press \(shortcut) to dictate"
+        case .recording: "Listening: press \(shortcut) to finish"
+        case .transcribing: "Transcribing…"
+        }
+    }
 
     func refreshIcon() {
         item?.button?.image = switch state {
@@ -131,6 +209,34 @@ final class App: NSObject, NSApplicationDelegate {
     }
 
     func startRecording() {
+        // Without microphone access macOS hands over silence, which would end as "Nothing heard".
+        switch Permissions.microphone {
+        case .granted:
+            break
+        case .notAsked:
+            Permissions.requestMicrophone { [weak self] granted in
+                guard let self else { return }
+                if granted {
+                    self.hud.finish(.done("Microphone ready: press \(Hotkey.display(self.config.hotkey)) again"), after: 2)
+                    self.windows.refresh()
+                } else {
+                    self.showSetup()
+                }
+            }
+            return
+        case .denied:
+            NSSound.beep()
+            hud.finish(.error("Microphone access is off: see Talk Setup"), after: 2.5)
+            showSetup()
+            return
+        }
+        // First run: the model is still on its way. Show how far it is instead of recording into a long wait.
+        guard Engine.isDownloaded else {
+            downloadModel()
+            hud.finish(.downloading(engine.downloadFraction ?? 0), after: 3)
+            showSetup()
+            return
+        }
         unloadTask?.cancel()
         do { try recorder.start() } catch {
             log("mic: \(error.localizedDescription)")
@@ -156,7 +262,7 @@ final class App: NSObject, NSApplicationDelegate {
             return
         }
         state = .transcribing
-        hud.show(.transcribing)
+        hud.show(engine.isReady ? .transcribing : .loading)
         pending += 1
         Task { @MainActor in
             defer {
@@ -165,6 +271,10 @@ final class App: NSObject, NSApplicationDelegate {
                 scheduleUnload()
             }
             do {
+                if !engine.isReady {  // short dictation or first load after an update: the model is still loading
+                    try? await engine.waitUntilLoaded()
+                    if state != .recording { hud.show(.transcribing) }
+                }
                 let text = try await engine.transcribe(samples)
                 guard state != .recording else {  // a new dictation already started
                     if !text.isEmpty { Paster.paste(text + " ") }
@@ -175,7 +285,8 @@ final class App: NSObject, NSApplicationDelegate {
                 } else if Paster.paste(text + " ") {
                     hud.finish(.done("Pasted"), after: 0.7)
                 } else {
-                    hud.finish(.error("Copied — press ⌘V (allow Accessibility)"), after: 2.5)
+                    hud.finish(.error("Copied: press ⌘V (Accessibility is off)"), after: 3)
+                    showSetup()
                 }
             } catch {
                 log("transcribe: \(error.localizedDescription)")
@@ -234,6 +345,10 @@ if args.count > 1 && args[1] == "transcribe" {
     do { try Icon.render(to: URL(fileURLWithPath: args[i + 1])) } catch { log("icons: \(error)"); exit(1) }
 } else if args.contains("--render-pill") {
     MainActor.assumeIsolated { HUD.renderPreviews(to: URL(fileURLWithPath: "/tmp")) }
+} else if let i = args.firstIndex(of: "--check-gui"), i + 1 < args.count {
+    MainActor.assumeIsolated { SelfTest.checkGUI(renderTo: URL(fileURLWithPath: args[i + 1])) }
+} else if args.contains("--measure-idle") {
+    MainActor.assumeIsolated { SelfTest.measureIdle() }
 } else if args.contains("--demo-pill") {
     // Visual check: cycles the pill through every state (screenshot it).
     let app = NSApplication.shared
