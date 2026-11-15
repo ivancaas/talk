@@ -5,7 +5,7 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
     enum State { case idle, recording, transcribing }
 
     private(set) var config = Config.load()
-    let engine = Engine()
+    let engine = ModelWorker()
     let recorder = Recorder()
     private var hotkey: Hotkey?
     /// True while Settings records a new shortcut; the old one is released meanwhile.
@@ -312,7 +312,13 @@ final class App: NSObject, NSApplicationDelegate, NSMenuDelegate {
 // MARK: - entry
 
 let args = CommandLine.arguments
-if args.count > 1 && args[1] == "transcribe" {
+signal(SIGPIPE, SIG_IGN)  // a model worker that exits early must not take the app down with it
+if args.count > 1 && args[1] == "--model-worker" {
+    WorkerMain.run()
+} else if let i = args.firstIndex(of: "--worker-test"), i + 1 < args.count {
+    MainActor.assumeIsolated { SelfTest.workerTest(files: args[(i + 1)...].map { URL(fileURLWithPath: $0) }) }
+    RunLoop.main.run()
+} else if args.count > 1 && args[1] == "transcribe" {
     TranscribeCLI.run(Array(args.dropFirst(2)))
 } else if args.count > 1 && ["help", "-h", "--help"].contains(args[1]) {
     print("Talk: menu-bar dictation. Run with no arguments to start the app.\n\n" + TranscribeCLI.usage)
